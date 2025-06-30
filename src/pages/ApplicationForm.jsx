@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -7,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Home } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 const ApplicationForm = () => {
   const [searchParams] = useSearchParams();
@@ -28,6 +28,7 @@ const ApplicationForm = () => {
   });
 
   const [errors, setErrors] = useState({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (!selectedRole || selectedRole === "Unknown Role") {
@@ -95,22 +96,95 @@ const ApplicationForm = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const uploadResume = async (file) => {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+    const filePath = `${fileName}`;
+
+    console.log("Uploading resume:", fileName);
+
+    const { error: uploadError } = await supabase.storage
+      .from('resumes')
+      .upload(filePath, file);
+
+    if (uploadError) {
+      console.error("Resume upload error:", uploadError);
+      throw uploadError;
+    }
+
+    return filePath;
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (validateForm()) {
-      console.log("Form submitted:", formData);
-      toast({
-        title: "Application submitted successfully!",
-        description: "We will review your application and get back to you soon.",
-      });
-      navigate("/thank-you");
-    } else {
+    if (!validateForm()) {
       toast({
         title: "Please fix the errors",
         description: "Some required fields are missing or invalid.",
         variant: "destructive",
       });
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      console.log("Starting form submission...");
+      
+      // Upload resume file
+      let resumeFilePath = null;
+      if (formData.resume) {
+        console.log("Uploading resume file...");
+        resumeFilePath = await uploadResume(formData.resume);
+        console.log("Resume uploaded successfully:", resumeFilePath);
+      }
+
+      // Prepare application data
+      const applicationData = {
+        full_name: formData.fullName,
+        phone_number: formData.phoneNumber,
+        email: formData.email,
+        role: selectedRole,
+        expected_salary: parseInt(formData.expectedSalary),
+        has_laptop: formData.hasLaptop === 'yes',
+        has_agency_experience: formData.hasAgencyExperience === 'yes',
+        current_city: formData.currentCity,
+        willing_to_relocate: formData.willingToRelocate === 'yes',
+        resume_file_path: resumeFilePath,
+        portfolio_link: formData.portfolioLink || null
+      };
+
+      console.log("Inserting application data:", applicationData);
+
+      // Insert application data
+      const { data, error } = await supabase
+        .from('applications')
+        .insert([applicationData])
+        .select();
+
+      if (error) {
+        console.error("Database insertion error:", error);
+        throw error;
+      }
+
+      console.log("Application submitted successfully:", data);
+
+      toast({
+        title: "Application submitted successfully!",
+        description: "We will review your application and get back to you soon.",
+      });
+
+      navigate("/thank-you");
+    } catch (error) {
+      console.error("Form submission error:", error);
+      toast({
+        title: "Submission failed",
+        description: "There was an error submitting your application. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -293,9 +367,10 @@ const ApplicationForm = () => {
           <div className="pt-6">
             <Button
               type="submit"
-              className="w-full bg-blue-500 hover:bg-blue-600 text-white py-4 text-lg font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all duration-300"
+              disabled={isSubmitting}
+              className="w-full bg-blue-500 hover:bg-blue-600 text-white py-4 text-lg font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Submit Application
+              {isSubmitting ? "Submitting..." : "Submit Application"}
             </Button>
           </div>
         </form>
