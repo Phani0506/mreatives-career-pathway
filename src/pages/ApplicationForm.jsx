@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -127,12 +128,45 @@ const ApplicationForm = () => {
     return Object.keys(newErrors).length === 0;
   };
 
+  const createBucketIfNotExists = async (bucketName) => {
+    console.log("Checking if bucket exists:", bucketName);
+    
+    // Check if bucket exists
+    const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+    
+    if (listError) {
+      console.error("Error listing buckets:", listError);
+      throw listError;
+    }
+
+    const bucketExists = buckets.some(bucket => bucket.id === bucketName);
+    
+    if (!bucketExists) {
+      console.log("Creating bucket:", bucketName);
+      const { error: createError } = await supabase.storage.createBucket(bucketName, {
+        public: false
+      });
+      
+      if (createError) {
+        console.error("Error creating bucket:", createError);
+        throw createError;
+      }
+      
+      console.log("Bucket created successfully:", bucketName);
+    } else {
+      console.log("Bucket already exists:", bucketName);
+    }
+  };
+
   const uploadResume = async (file, bucketName) => {
     const fileExt = file.name.split('.').pop();
     const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
     const filePath = `${fileName}`;
 
     console.log("Uploading resume to bucket:", bucketName, "with filename:", fileName);
+
+    // Ensure bucket exists before uploading
+    await createBucketIfNotExists(bucketName);
 
     const { error: uploadError } = await supabase.storage
       .from(bucketName)
@@ -214,7 +248,7 @@ const ApplicationForm = () => {
       console.error("Form submission error:", error);
       toast({
         title: "Submission failed",
-        description: "There was an error submitting your application. Please try again.",
+        description: error.message || "There was an error submitting your application. Please try again.",
         variant: "destructive",
       });
     } finally {
