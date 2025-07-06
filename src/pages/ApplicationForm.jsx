@@ -36,6 +36,37 @@ const ApplicationForm = () => {
     }
   }, [selectedRole, navigate]);
 
+  // Helper function to get the correct table name and bucket based on role
+  const getRoleConfig = (role) => {
+    const roleConfigs = {
+      "Graphic Designer": {
+        tableName: "graphic_designer_applications",
+        bucketName: "graphic-designer-resumes"
+      },
+      "Social Media Manager / Marketer": {
+        tableName: "social_media_manager_applications",
+        bucketName: "social-media-manager-resumes"
+      },
+      "ADs Executive": {
+        tableName: "ads_executive_applications",
+        bucketName: "ads-executive-resumes"
+      },
+      "Production Executive": {
+        tableName: "production_executive_applications",
+        bucketName: "production-executive-resumes"
+      },
+      "Intern": {
+        tableName: "intern_applications",
+        bucketName: "intern-resumes"
+      }
+    };
+
+    return roleConfigs[role] || {
+      tableName: "intern_applications",
+      bucketName: "intern-resumes"
+    };
+  };
+
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     if (errors[field]) {
@@ -96,15 +127,15 @@ const ApplicationForm = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const uploadResume = async (file) => {
+  const uploadResume = async (file, bucketName) => {
     const fileExt = file.name.split('.').pop();
     const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
     const filePath = `${fileName}`;
 
-    console.log("Uploading resume:", fileName);
+    console.log("Uploading resume to bucket:", bucketName, "with filename:", fileName);
 
     const { error: uploadError } = await supabase.storage
-      .from('resumes')
+      .from(bucketName)
       .upload(filePath, file);
 
     if (uploadError) {
@@ -130,13 +161,16 @@ const ApplicationForm = () => {
     setIsSubmitting(true);
 
     try {
-      console.log("Starting form submission...");
+      console.log("Starting form submission for role:", selectedRole);
+      
+      const roleConfig = getRoleConfig(selectedRole);
+      console.log("Using role config:", roleConfig);
       
       // Upload resume file
       let resumeFilePath = null;
       if (formData.resume) {
         console.log("Uploading resume file...");
-        resumeFilePath = await uploadResume(formData.resume);
+        resumeFilePath = await uploadResume(formData.resume, roleConfig.bucketName);
         console.log("Resume uploaded successfully:", resumeFilePath);
       }
 
@@ -145,7 +179,6 @@ const ApplicationForm = () => {
         full_name: formData.fullName,
         phone_number: formData.phoneNumber,
         email: formData.email,
-        role: selectedRole,
         expected_salary: parseInt(formData.expectedSalary),
         has_laptop: formData.hasLaptop === 'yes',
         has_agency_experience: formData.hasAgencyExperience === 'yes',
@@ -155,11 +188,12 @@ const ApplicationForm = () => {
         portfolio_link: formData.portfolioLink || null
       };
 
-      console.log("Inserting application data:", applicationData);
+      console.log("Inserting application data into table:", roleConfig.tableName);
+      console.log("Application data:", applicationData);
 
-      // Insert application data
+      // Insert application data into the role-specific table
       const { data, error } = await supabase
-        .from('applications')
+        .from(roleConfig.tableName)
         .insert([applicationData])
         .select();
 
